@@ -33,11 +33,6 @@ if 'VERSION' not in os.environ:
 
 VERSION = os.environ['VERSION']
 
-REQUIRED = [
-    'numpy>=1.19.1', 'geventhttpclient>=1.4.4', 'python-rapidjson>=0.9.1',
-    'tritonclientutils>={}'.format(VERSION)
-]
-
 try:
     from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
 
@@ -54,17 +49,22 @@ except ImportError:
     bdist_wheel = None
 
 setup(
-    name='tritonhttpclient',
+    name='tritonclient',
     version=VERSION,
     author='NVIDIA Inc.',
     author_email='sw-dl-triton@nvidia.com',
     description=
-    'Python client library for communicating with NVIDIA Triton Inference Server using HTTP',
+    'Python client library and utilities for communicating with Triton Inference Server',
     license='BSD',
     url='http://nvidia.com',
-    keywords='triton inference server service client',
+    keywords='grpc http triton tensorrt inference server service client',
+    extras_require={
+        "grpc": ["tritongrpcclient>={}".format(VERSION)],
+        "http": ["tritonhttpclient>={}".format(VERSION)],
+        "utils": ["tritonclientutils>={}".format(VERSION)],
+        "shmutils": ["tritonshmutils>={}".format(VERSION)]
+    },
     packages=find_packages(),
-    install_requires=REQUIRED,
     zip_safe=False,
     cmdclass={'bdist_wheel': bdist_wheel},
     data_files=[("", ["LICENSE.txt"])],

@@ -55,6 +55,7 @@ endif() # NOT WIN32
 
 configure_file(../../../../VERSION VERSION COPYONLY)
 configure_file(utils.py utils.py COPYONLY)
+configure_file(LICENSE.txt LICENSE.txt COPYONLY)
 
 if(NOT WIN32)
   configure_file(shared_memory/__init__.py shared_memory/__init__.py COPYONLY)
@@ -77,6 +78,7 @@ if(${TRITON_ENABLE_HTTP})
     ARGS "${CMAKE_CURRENT_BINARY_DIR}/http/"
     DEPENDS
       ${CMAKE_CURRENT_BINARY_DIR}/VERSION
+      ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt
       ${CMAKE_CURRENT_BINARY_DIR}/httpclient.py
       ${CMAKE_CURRENT_BINARY_DIR}/utils.py
       ${CMAKE_CURRENT_BINARY_DIR}/http_setup.py
@@ -110,6 +112,7 @@ if(${TRITON_ENABLE_GRPC})
     ARGS "${CMAKE_CURRENT_BINARY_DIR}/grpc/"
     DEPENDS
       ${CMAKE_CURRENT_BINARY_DIR}/VERSION
+      ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt
       ${CMAKE_CURRENT_BINARY_DIR}/grpcclient.py
       ${CMAKE_CURRENT_BINARY_DIR}/utils.py
       ${CMAKE_CURRENT_BINARY_DIR}/grpc_setup.py
@@ -156,6 +159,7 @@ add_custom_command(
     ARGS "${CMAKE_CURRENT_BINARY_DIR}/utils/"
     DEPENDS
       ${CMAKE_CURRENT_BINARY_DIR}/VERSION
+      ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt
       ${CMAKE_CURRENT_BINARY_DIR}/utils_setup.py
 )
 
@@ -189,6 +193,7 @@ if(NOT WIN32)
       ARGS "${CMAKE_CURRENT_BINARY_DIR}/shm/"
       DEPENDS
         ${CMAKE_CURRENT_BINARY_DIR}/VERSION
+        ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt
         ${CMAKE_CURRENT_BINARY_DIR}/shm_utils_setup.py
         ${SHM_UTILS_DEPENDS}
   )
@@ -204,3 +209,30 @@ if(NOT WIN32)
       CODE "file(INSTALL \${_Wheel} DESTINATION \"${CMAKE_INSTALL_PREFIX}/python\")"
   )
 endif() # NOT WIN32
+
+#
+# Main Client Wheel
+#
+set(client_wheel_stamp_file "client_stamp.whl")
+configure_file(client_setup.py client_setup.py COPYONLY)
+
+add_custom_command(
+    OUTPUT "${client_wheel_stamp_file}"
+    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/client_build_wheel.sh"
+    ARGS "${CMAKE_CURRENT_BINARY_DIR}/client/"
+    DEPENDS
+      ${CMAKE_CURRENT_BINARY_DIR}/VERSION
+      ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt
+      ${CMAKE_CURRENT_BINARY_DIR}/client_setup.py
+)
+
+add_custom_target(
+    client-wheel-main ALL
+    DEPENDS
+      "${client_wheel_stamp_file}"
+)
+
+install(
+    CODE "file(GLOB _Wheel \"${CMAKE_CURRENT_BINARY_DIR}/client/tritonclient-*.whl\")"
+    CODE "file(INSTALL \${_Wheel} DESTINATION \"${CMAKE_INSTALL_PREFIX}/python\")"
+)

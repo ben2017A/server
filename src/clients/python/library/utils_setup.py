@@ -33,7 +33,7 @@ if 'VERSION' not in os.environ:
 
 VERSION = os.environ['VERSION']
 
-REQUIRED = ['numpy']
+REQUIRED = ['numpy>=1.19.1']
 
 try:
     from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
@@ -54,7 +54,7 @@ setup(
     name='tritonclientutils',
     version=VERSION,
     author='NVIDIA Inc.',
-    author_email='tanmayv@nvidia.com',
+    author_email='sw-dl-triton@nvidia.com',
     description='Python utils library for NVIDIA Triton Inference Server client',
     license='BSD',
     url='http://nvidia.com',
@@ -63,4 +63,5 @@ setup(
     install_requires=REQUIRED,
     zip_safe=False,
     cmdclass={'bdist_wheel': bdist_wheel},
+    data_files=[("", ["LICENSE.txt"])],
 )

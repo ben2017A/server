@@ -33,7 +33,7 @@ if 'VERSION' not in os.environ:
 
 VERSION = os.environ['VERSION']
 
-REQUIRED = ['numpy']
+REQUIRED = ['numpy>=1.19.1']
 
 try:
     from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
@@ -59,7 +59,7 @@ if os.name == 'posix':
         name='tritonshmutils',
         version=VERSION,
         author='NVIDIA Inc.',
-        author_email='tanmayv@nvidia.com',
+        author_email='sw-dl-triton@nvidia.com',
         description=
         'Python utils library for creating and managing system and cuda shared memory regions for NVIDIA Triton Inference Server',
         license='BSD',
@@ -74,4 +74,5 @@ if os.name == 'posix':
         zip_safe=False,
         platforms=['posix'],
         cmdclass={'bdist_wheel': bdist_wheel},
+        data_files=[("", ["LICENSE.txt"])],
     )

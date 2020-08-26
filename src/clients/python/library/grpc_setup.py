@@ -34,8 +34,8 @@ if 'VERSION' not in os.environ:
 VERSION = os.environ['VERSION']
 
 REQUIRED = [
-    'numpy', 'python-rapidjson', 'protobuf>=3.5.0', 'grpcio',
-    'tritonclientutils'
+    'numpy>=1.19.1', 'python-rapidjson>=0.9.1', 'protobuf>=3.5.0',
+    'grpcio>=1.31.0', 'tritonclientutils>={}'.format(VERSION)
 ]
 
 try:
@@ -57,7 +57,7 @@ setup(
     name='tritongrpcclient',
     version=VERSION,
     author='NVIDIA Inc.',
-    author_email='tanmayv@nvidia.com',
+    author_email='sw-dl-triton@nvidia.com',
     description=
     'Python client library for communicating with NVIDIA Triton Inference Server using gRPC',
     license='BSD',
@@ -67,4 +67,5 @@ setup(
     install_requires=REQUIRED,
     zip_safe=False,
     cmdclass={'bdist_wheel': bdist_wheel},
+    data_files=[("", ["LICENSE.txt"])],
 )

@@ -45,6 +45,8 @@ function main() {
   echo $(date) : "=== Using builddir: ${WHLDIR}"
   mkdir -p ${WHLDIR}/tritongrpcclient/
 
+  cp LICENSE.txt "${WHLDIR}"
+
   echo "Adding package files"
   cp ../../../core/*_pb2.py \
     "${WHLDIR}/tritongrpcclient/."

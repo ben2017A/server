@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -24,48 +25,39 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import os
-from setuptools import find_packages
-from setuptools import setup
+set -e
 
-if 'VERSION' not in os.environ:
-    raise Exception('envvar VERSION must be specified')
+function main() {
+  if [[ $# -lt 1 ]] ; then
+    echo "usage: $0 <destination dir>"
+    exit 1
+  fi
 
-VERSION = os.environ['VERSION']
+  if [[ ! -f "VERSION" ]]; then
+    echo "Could not find VERSION"
+    exit 1
+  fi
 
-REQUIRED = [
-    'numpy>=1.19.1', 'geventhttpclient>=1.4.4', 'python-rapidjson>=0.9.1',
-    'tritonclientutils>={}'.format(VERSION)
-]
+  VERSION=`cat VERSION`
+  DEST="$1"
+  WHLDIR="$DEST/wheel"
 
-try:
-    from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
+  echo $(date) : "=== Using builddir: ${WHLDIR}"
+  mkdir -p ${WHLDIR}/client/
+  
+  cp LICENSE.txt "${WHLDIR}"
 
-    class bdist_wheel(_bdist_wheel):
+  cp client_setup.py "${WHLDIR}"
 
-        def finalize_options(self):
-            _bdist_wheel.finalize_options(self)
-            self.root_is_pure = False
+  pushd "${WHLDIR}"
+  echo $(date) : "=== Building wheel"
+  VERSION=$VERSION python${PYVER} client_setup.py bdist_wheel
+  mkdir -p "${DEST}"
+  cp dist/* "${DEST}"
+  popd
+  echo $(date) : "=== Output wheel file is in: ${DEST}"
 
-        def get_tag(self):
-            pyver, abi, plat = 'py3', 'none', 'any'
-            return pyver, abi, plat
-except ImportError:
-    bdist_wheel = None
+  touch ${DEST}/stamp.whl
+}
 
-setup(
-    name='tritonhttpclient',
-    version=VERSION,
-    author='NVIDIA Inc.',
-    author_email='sw-dl-triton@nvidia.com',
-    description=
-    'Python client library for communicating with NVIDIA Triton Inference Server using HTTP',
-    license='BSD',
-    url='http://nvidia.com',
-    keywords='triton inference server service client',
-    packages=find_packages(),
-    install_requires=REQUIRED,
-    zip_safe=False,
-    cmdclass={'bdist_wheel': bdist_wheel},
-    data_files=[("", ["LICENSE.txt"])],
-)
+main "$@"

@@ -45,6 +45,8 @@ function main() {
   echo $(date) : "=== Using builddir: ${WHLDIR}"
   mkdir -p ${WHLDIR}/tritonclientutils/
 
+  cp LICENSE.txt "${WHLDIR}"
+
   cp utils.py \
     "${WHLDIR}/tritonclientutils/__init__.py"
 

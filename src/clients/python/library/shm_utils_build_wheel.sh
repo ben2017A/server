@@ -45,6 +45,8 @@ function main() {
   echo $(date) : "=== Using builddir: ${WHLDIR}"
   mkdir -p ${WHLDIR}/tritonshmutils/
 
+  cp LICENSE.txt "${WHLDIR}"
+
   if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
     mkdir -p ${WHLDIR}/tritonshmutils/shared_memory
     cp libcshm.so \
