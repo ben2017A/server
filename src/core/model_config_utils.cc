@@ -1421,6 +1421,8 @@ ValidateModelConfigInt64()
       "ModelConfig::input::reshape::shape",
       "ModelConfig::output::dims",
       "ModelConfig::output::reshape::shape",
+      "ModelConfig::batch_output::dims",
+      "ModelConfig::batch_output::reshape::shape",
       "ModelConfig::version_policy::specific::versions",
       "ModelConfig::dynamic_batching::max_queue_delay_microseconds",
       "ModelConfig::dynamic_batching::default_queue_policy::default_timeout_"
