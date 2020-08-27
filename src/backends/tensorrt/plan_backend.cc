@@ -583,6 +583,7 @@ PlanBackend::CreateExecutionContext(
       context->InitializeConfigShapeOutputBindings(Config().output()));
   RETURN_IF_ERROR(
       context->InitializeConfigExecuteOutputBindings(Config().output()));
+  RETURN_IF_ERROR(context->InitializeBatchOutputBindings(Config()));
 
   // Make sure every index which corresponds to an execution binding is
   // initialized.
@@ -1132,21 +1133,22 @@ PlanBackend::Context::InitializeBatchInputBindings(
     const inference::ModelConfig& config)
 {
   for (const auto& batch_input : config.batch_input()) {
-    std::string tensor_name = batch_input.name();
-    inference::DataType tensor_datatype = batch_input.data_type();
-    // Batch inputs are ragged inputs which will be concatenated and flatten,
-    // so expecting dims to be [-1]
-    DimsList dims;
-    dims.Add(-1);
+    for (const auto& tensor_name : batch_input.target_name()) {
+      inference::DataType tensor_datatype = batch_input.data_type();
+      // Batch inputs are ragged inputs which will be concatenated and flatten,
+      // so expecting dims to be [-1]
+      DimsList dims;
+      dims.Add(-1);
 
-    RETURN_IF_ERROR(InitializeExecuteInputBinding(
-        tensor_name, tensor_datatype, dims, false, true));
+      RETURN_IF_ERROR(InitializeExecuteInputBinding(
+          tensor_name, tensor_datatype, dims, false, true));
 
-    int io_index = engine_->getBindingIndex(tensor_name.c_str());
-    batch_inputs_[io_index].reset(new BatchInputData(
-        batch_input,
-        new AllocatedMemory(
-            byte_sizes_[io_index], TRITONSERVER_MEMORY_CPU_PINNED, 0)));
+      int io_index = engine_->getBindingIndex(tensor_name.c_str());
+      batch_inputs_[io_index].reset(new BatchInputData(
+          batch_input,
+          new AllocatedMemory(
+              byte_sizes_[io_index], TRITONSERVER_MEMORY_CPU_PINNED, 0)));
+    }
   }
 
   return Status::Success;
@@ -1373,12 +1375,9 @@ PlanBackend::Context::InitializeConfigExecuteOutputBindings(
                 io.name() + "' is a wildcard.");
       }
 
-      // FIXME whether output with 'batch_output' can be validated
-      if (!io.has_batch_output()) {
-        RETURN_IF_ERROR(CompareDimsSupported(
-            name_, io.name(), engine_dims, model_config_dims, support_batching_,
-            is_dynamic_, false /* compare_exact */));
-      }
+      RETURN_IF_ERROR(CompareDimsSupported(
+          name_, io.name(), engine_dims, model_config_dims, support_batching_,
+          is_dynamic_, false /* compare_exact */));
 
       int64_t byte_size;
       if (!is_dynamic_) {
@@ -1413,12 +1412,144 @@ PlanBackend::Context::InitializeConfigExecuteOutputBindings(
 
     byte_sizes_[io_index] = max_byte_size;
     buffers_[io_index] = buffer;
-    // Whether the output needs to be scattered based on input
-    if (io.has_batch_output()) {
-      if (io.batch_output().kind() !=
-          inference::ModelOutput::BatchOutput::BATCH_SCATTER_WITH_INPUT_SHAPE) {
-            return Status(Status::Code::INVALID_ARG, "batch output kind other than"
-              "BATCH_SCATTER_WITH_INPUT_SHAPE is not supported for " + name_);
+
+    // Set buffer bindings of all optimization profile since buffer is allocated
+    for (auto& trt_context : trt_contexts_) {
+      auto binding_index =
+          num_expected_bindings_ * trt_context.first + io_index;
+      buffer_bindings_[binding_index] = buffers_[io_index];
+    }
+  }
+
+  return Status::Success;
+}
+
+Status
+PlanBackend::Context::InitializeBatchOutputBindings(
+    const inference::ModelConfig& config)
+{
+  for (const auto& io : config.batch_output()) {
+    for (const auto& name : io.target_name()) {
+      // the maximum byte sizes across all profiles
+      int64_t max_byte_size = 0;
+      // FIXME Currently not handling the case that batch output is shape tensor
+      int io_index = engine_->getBindingIndex(name.c_str());
+
+      if (engine_->isShapeBinding(io_index)) {
+        return Status(
+            Status::Code::INVALID_ARG,
+            "batch output '" + name + "' can not be shape binding");
+      }
+
+      for (auto& trt_context : trt_contexts_) {
+        auto& profile_index = trt_context.first;
+        auto& context = trt_context.second;
+        int binding_index = num_expected_bindings_ * profile_index + io_index;
+        if (binding_index < 0) {
+          return Status(
+              Status::Code::NOT_FOUND,
+              "output '" + name + "' not found for " + name_);
+        }
+
+        if (buffers_[io_index] != nullptr) {
+          return Status(
+              Status::Code::INVALID_ARG, "output '" + name +
+                                             "' has already appeared as an " +
+                                             "input or output for " + name_);
+        }
+
+        if (engine_->bindingIsInput(binding_index)) {
+          return Status(
+              Status::Code::INVALID_ARG,
+              "output '" + name + "' is expected to be an input in model for " +
+                  name_);
+        }
+
+        inference::DataType dt = ConvertTrtTypeToDataType(
+            engine_->getBindingDataType(binding_index));
+        if (dt != io.data_type()) {
+          return Status(
+              Status::Code::INVALID_ARG,
+              "unexpected datatype " + inference::DataType_Name(dt) +
+                  " for inference output '" + name + "', expecting " +
+                  inference::DataType_Name(io.data_type()) + " for " + name_);
+        }
+
+        MemoryFormat fmt =
+            ConvertTrtFmtToFmt(engine_->getBindingFormat(binding_index));
+        if (fmt != MemoryFormat::LINEAR) {
+          return Status(
+              Status::Code::INVALID_ARG,
+              "unexpected tensor format " + MemoryFormat_Name(fmt) +
+                  " for output '" + name +
+                  "'. Only LINEAR memory format is supported at present.");
+        }
+
+        const DimsList& model_config_dims =
+            (io.has_reshape()) ? io.reshape().shape() : io.dims();
+
+        nvinfer1::Dims engine_dims =
+            engine_->getBindingDimensions(binding_index);
+
+        // Validate whether the binding supports maximum batch size
+        // specification in the config
+        if ((!engine_->hasImplicitBatchDimension()) &&
+            (!ContainsWildcardAtExplicitBatchDim(engine_dims)) &&
+            (max_batch_size_ > 1)) {
+          return Status(
+              Status::Code::INVALID_ARG,
+              "unexpected configuration maximum batch size " +
+                  std::to_string(max_batch_size_) + " for '" + name_ +
+                  "', model maximum is 1 as model does not contain an implicit "
+                  "batch dimension nor the explicit batch-dimension of '" +
+                  name + "' is a wildcard.");
+        }
+
+        // FIXME whether output with 'batch_output' can be validated,
+        // currently the validation is skipped as the dims from model will be
+        // different from the dims used in model config
+
+        int64_t byte_size;
+        if (!is_dynamic_) {
+          byte_size = GetByteSize(max_batch_size_, dt, model_config_dims);
+        } else {
+          const nvinfer1::Dims output_dim =
+              context.context_->getBindingDimensions(binding_index);
+          std::vector<int64_t> dim_vec;
+          DimsToDimVec(output_dim, &dim_vec);
+          byte_size = GetByteSize(dt, dim_vec);
+        }
+
+        if (byte_size == -1) {
+          return Status(
+              Status::Code::INTERNAL,
+              "unable to calculate size for output '" + name + " for " + name_);
+        }
+        max_byte_size = std::max(max_byte_size, byte_size);
+      }
+
+      // Allocate CUDA memory. We rely on buffer_bindings_ being non-nullptr to
+      // indicate that the buffer has been correctly initalized so even
+      // for zero-sized tensors always allocate something.
+      void* buffer;
+      cudaError_t err =
+          cudaMalloc(&buffer, std::max((int64_t)1, max_byte_size));
+      if (err != cudaSuccess) {
+        return Status(
+            Status::Code::INTERNAL, "unable to allocate memory for input '" +
+                                        name + " for " + name_ + ": " +
+                                        std::string(cudaGetErrorString(err)));
+      }
+
+      byte_sizes_[io_index] = max_byte_size;
+      buffers_[io_index] = buffer;
+      // Whether the output needs to be scattered based on input
+      if (io.kind() != inference::BatchOutput::BATCH_SCATTER_WITH_INPUT_SHAPE) {
+        return Status(
+            Status::Code::INVALID_ARG,
+            "batch output kind other than"
+            "BATCH_SCATTER_WITH_INPUT_SHAPE is not supported for " +
+                name_);
       }
       buffer_is_ragged_[io_index] = true;
 
@@ -1432,14 +1563,15 @@ PlanBackend::Context::InitializeConfigExecuteOutputBindings(
         output_shape.push_back(dim);
       }
       io_shape_mapping_[io_index] =
-          std::make_pair(io.batch_output().target_input(0), output_shape);
-    }
+          std::make_pair(io.source_input(0), output_shape);
 
-    // Set buffer bindings of all optimization profile since buffer is allocated
-    for (auto& trt_context : trt_contexts_) {
-      auto binding_index =
-          num_expected_bindings_ * trt_context.first + io_index;
-      buffer_bindings_[binding_index] = buffers_[io_index];
+      // Set buffer bindings of all optimization profile since buffer is
+      // allocated
+      for (auto& trt_context : trt_contexts_) {
+        auto binding_index =
+            num_expected_bindings_ * trt_context.first + io_index;
+        buffer_bindings_[binding_index] = buffers_[io_index];
+      }
     }
   }
 
@@ -2041,7 +2173,7 @@ PlanBackend::Context::Run(
       std::vector<int64_t> ragged_shape{0};
       inference::DataType datatype;
       // FIXME inefficient as looping in this way may iterate the same
-      // target_input multiple times
+      // source_input multiple times
       if (batch_inputs_[bindex] != nullptr) {
         const auto& batch_input = batch_inputs_[bindex]->first;
         auto& allocated_memory = batch_inputs_[bindex]->second;

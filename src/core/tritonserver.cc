@@ -1774,6 +1774,31 @@ TRITONSERVER_ServerModelMetadata(
 
     RETURN_IF_STATUS_ERROR(outputs.Append(std::move(io_metadata)));
   }
+  // Batch outputs should also be seen as output in model meta data
+  for (const auto& io : model_config.batch_output()) {
+    for (const auto& name : io.target_name()) {
+      ni::TritonJson::Value io_metadata(
+          metadata, ni::TritonJson::ValueType::OBJECT);
+      RETURN_IF_STATUS_ERROR(io_metadata.AddStringRef("name", name.c_str()));
+      RETURN_IF_STATUS_ERROR(io_metadata.AddStringRef(
+          "datatype", ni::DataTypeToProtocolString(io.data_type())));
+
+      // Output shape. If the model supports batching then must include
+      // '-1' for the batch dimension.
+      ni::TritonJson::Value io_metadata_shape(
+          metadata, ni::TritonJson::ValueType::ARRAY);
+      if (model_config.max_batch_size() >= 1) {
+        RETURN_IF_STATUS_ERROR(io_metadata_shape.AppendInt(-1));
+      }
+      for (const auto d : io.dims()) {
+        RETURN_IF_STATUS_ERROR(io_metadata_shape.AppendInt(d));
+      }
+      RETURN_IF_STATUS_ERROR(
+          io_metadata.Add("shape", std::move(io_metadata_shape)));
+
+      RETURN_IF_STATUS_ERROR(outputs.Append(std::move(io_metadata)));
+    }
+  }
   RETURN_IF_STATUS_ERROR(metadata.Add("outputs", std::move(outputs)));
 
   *model_metadata = reinterpret_cast<TRITONSERVER_Message*>(

@@ -157,6 +157,19 @@ InferenceBackend::SetModelConfig(
       RETURN_IF_ERROR(label_provider_->AddLabels(io.name(), label_path));
     }
   }
+  // Construct batch output in the form of model output
+  for (const auto& output : config.batch_output()) {
+    for (const auto& name : output.target_name()) {
+      inference::ModelOutput io;
+      io.set_name(name);
+      io.set_data_type(output.data_type());
+      *io.mutable_dims() = output.dims();
+      if (output.has_reshape()) {
+        *io.mutable_reshape() = output.reshape();
+      }
+      output_map_.insert(std::make_pair(name, io));
+    }
+  }
 
   if (config_.has_dynamic_batching()) {
     default_priority_level_ =

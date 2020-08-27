@@ -516,6 +516,11 @@ InferenceRequest::Normalize()
     for (const auto& output : model_config.output()) {
       requested_outputs_.insert(output.name());
     }
+    for (const auto& output : model_config.batch_output()) {
+      for (const auto& name : output.target_name()) {
+        requested_outputs_.insert(name);
+      }
+    }
   } else {
     // Validate if the original requested output name exists in the
     // model configuration.
